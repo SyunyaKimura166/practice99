@@ -15,6 +15,9 @@ on:
         default: 'false'
         type: boolean
 
+  repository_dispatch:
+    types: [s3-uploader-updated]
+
 env:
   SOURCE_REPO: IoVPF-AgenticSoftwareEngineering/agents-templete
   SOURCE_BRANCH: feature/integrate-log-uploader
