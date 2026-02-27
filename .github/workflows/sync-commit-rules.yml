@@ -15,6 +15,9 @@ on:
         default: 'false'
         type: boolean
 
+  repository_dispatch:
+    types: [commit-rules-updated]
+
 env:
   SOURCE_REPO: IoVPF-AgenticSoftwareEngineering/ssh-ops-agent
   SOURCE_BRANCH: research/ToDo_AI_tracking_check
