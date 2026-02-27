@@ -15,6 +15,9 @@ on:
         default: 'false'
         type: boolean
 
+  repository_dispatch:
+    types: [dotfiles-updated]
+
 env:
   SOURCE_REPO: IoVPF-AgenticSoftwareEngineering/dotfiles
   SOURCE_BRANCH: main
