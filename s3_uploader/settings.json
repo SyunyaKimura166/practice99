@@ -1,0 +1,25 @@
+{
+  "env": {
+    "CLAUDE_CODE_USE_BEDROCK": "1",
+    "AWS_REGION": "us-east-1",
+    "ANTHROPIC_MODEL": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-4-20250514-v1:0",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8192",
+    "MAX_THINKING_TOKENS": "2048",
+    "DISABLE_PROMPT_CACHING": "1"
+  },
+  "alwaysThinkingEnabled": false,
+  "provider": "bedrock",
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "autosar-bugfix-agent",
+      "hooks": [{
+        "type": "command",
+        "command": "echo ARXMLを修正すべきかコードを直接修正すべきかを判断し、どちらを修正すべきかを指示してください"
+      }]
+    }]
+  }
+}
