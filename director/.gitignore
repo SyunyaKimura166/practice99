@@ -1,0 +1,13 @@
+
+# Python関連
+__pycache__/
+*.pyc
+.venv/
+
+# VS Code設定
+.vscode/
+
+# OS固有ファイル
+.DS_Store
+
+# 環境変数ファイル
