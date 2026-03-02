@@ -1,0 +1,150 @@
+name: DirectorAgentWorkflow
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  run-claude-with-mcp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      # Python セットアップ（MCP サーバ依存）
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install MCP server dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "mcp" "pydantic" || pip install "modelcontextprotocol" "pydantic"
+
+      # 必要ファイルの存在確認
+      - name: Ensure prompt and MCP server files exist
+        run: |
+          set -euo pipefail
+          test -f "docs/requirement/prompt/DirectorAgentPrompt.md" || { echo "::error::docs/requirement/prompt/DirectorAgentPrompt.md not found"; exit 1; }
+          test -f "docs/requirement/mcp_tool/github_projects_mcp.py" || { echo "::error::docs/requirement/mcp_tool/github_projects_mcp.py not found"; exit 1; }
+
+      # MCP設定ファイルを動的に生成
+      - name: Setup MCP configuration
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.claude"
+          cat > "$HOME/.claude/settings.json" << 'EOF'
+          {
+            "enableAllProjectMcpServers": true
+          }
+          EOF
+
+          # プロジェクトMCP設定を.mcp.jsonとして作成
+          cat > ".mcp.json" << EOF
+          {
+            "mcpServers": {
+              "github-projects": {
+                "command": "python3",
+                "args": ["${{ github.workspace }}/docs/requirement/mcp_tool/github_projects_mcp.py"],
+                "env": {
+                  "GITHUB_TOKEN": "${{ secrets.MY_GITHUB_TOKEN }}"
+                }
+              }
+            }
+          }
+          EOF
+
+          echo "=== MCP Configuration ==="
+          cat .mcp.json
+
+      # プロンプトを読み込んで GITHUB_OUTPUT に渡す
+      - name: Read prompt file
+        id: read_prompt
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROMPT_PATH="docs/requirement/prompt/DirectorAgentPrompt.md"
+          if [[ ! -f "$PROMPT_PATH" ]]; then
+            echo "::error::Prompt file not found at $PROMPT_PATH"; exit 1
+          fi
+          DELIM="__PROMPT_EOF_$(date +%s%N)__"
+          if grep -q "$DELIM" "$PROMPT_PATH"; then
+            echo "::error::Prompt file contains reserved delimiter $DELIM"; exit 1
+          fi
+          {
+            echo "prompt<<$DELIM"
+            awk '{ sub(/\r$/, ""); print }' "$PROMPT_PATH"
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
+
+      # Claude Code を事前インストール（--force フラグでロック競合を回避）
+      - name: Pre-install Claude Code
+        run: |
+          set -euo pipefail
+          CLAUDE_CODE_VERSION="2.0.74"
+          echo "Installing Claude Code v${CLAUDE_CODE_VERSION} with --force flag..."
+
+          # ロックファイルを事前にクリーンアップ
+          rm -rf "$HOME/.claude/install.lock" 2>/dev/null || true
+          rm -rf /tmp/claude-install* 2>/dev/null || true
+
+          # --force フラグを使用してインストール
+          curl -fsSL https://claude.ai/install.sh | bash -s -- "$CLAUDE_CODE_VERSION" --force
+
+          echo "Claude Code installed successfully"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+          # インストール確認
+          "$HOME/.local/bin/claude" --version || echo "Claude version check skipped"
+
+      # Claude Code 実行（Bedrock 経由）
+      - name: Run DirectorAgent with Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          BEDROCK_MODEL_ID: anthropic.claude-opus-4-5-20251101-v1:0
+          GITHUB_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
+        with:
+          use_bedrock: true
+          github_token: ${{ secrets.MY_GITHUB_TOKEN }}
+          prompt: ${{ steps.read_prompt.outputs.prompt }}
+          show_full_output: true
+          claude_args: |
+            --mcp-config .mcp.json
+            --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task,WebFetch,TodoWrite,mcp__github-projects__list_repository_issues,mcp__github-projects__get_issue_project_info,mcp__github-projects__update_project_status,mcp__github-projects__get_issue_node_id_from_repo_info,mcp__github-projects__change_issue_status_by_repo_info,mcp__github-projects__change_issue_status_by_node_id,mcp__github-projects__update_issue_assignees"
+          path_to_claude_code_executable: /home/runner/.local/bin/claude
+
+      - name: Write summary
+        run: |
+          set -euo pipefail
+          echo "## DirectorAgent 実行結果" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 設定情報" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **MCP Server**: github-projects (Python stdio)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Prompt file**: docs/requirement/prompt/DirectorAgentPrompt.md" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Model**: anthropic.claude-opus-4-5-20251101-v1:0" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Region**: ${{ secrets.AWS_REGION || 'us-east-1' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 利用可能なMCPツール" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`list_repository_issues\`: Issue一覧取得" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`get_issue_project_info\`: Issueのプロジェクト情報取得" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`change_issue_status_by_repo_info\`: ステータス変更" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`update_issue_assignees\`: assignees設定" >> "$GITHUB_STEP_SUMMARY"
