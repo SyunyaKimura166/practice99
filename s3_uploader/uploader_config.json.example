@@ -1,0 +1,10 @@
+{
+  "s3": {
+    "bucket": "your-s3-bucket-name",
+    "prefix": "commit_base"
+  },
+  "project": {
+    "name": "-home-ubuntu-agents-templete",
+    "repo_path": "/home/ubuntu/agents-templete"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "s3": {
+    "bucket": "claude-code-history",
+    "prefix": "commit_base"
+  }
+}
